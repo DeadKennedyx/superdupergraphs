@@ -1,5 +1,9 @@
 # SuperDuperGraphs
 
+
+https://github.com/user-attachments/assets/c20818c7-64f5-4abc-af65-c6d905f4e752
+
+
 Lightweight, dependency-free JavaScript library for interactive stock charts with TradingView-style drawings (text, emoji, pencil, arrows, shapes, projections, and more). Built on the HTML canvas so you can embed it anywhere without heavy bundles.
 
 ## Features
