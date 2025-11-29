@@ -1,0 +1,31 @@
+{
+  "name": "superdupergraphs",
+  "version": "0.1.0",
+  "description": "Lightweight, dependency-free JS library for interactive stock charts with drawing tools (text, emoji, pencil, arrows, shapes, projections).",
+  "license": "MIT",
+  "type": "module",
+  "main": "src/index.js",
+  "files": [
+    "src",
+    "LICENSE",
+    "README.md"
+  ],
+  "scripts": {
+    "clean": "rm -rf dist",
+    "build": "npm run clean && mkdir -p dist && cp -r src/* dist && cp README.md dist/README.md && cp LICENSE dist/LICENSE",
+    "demo": "npm run build && python -m http.server 4173"
+  },
+  "keywords": [
+    "chart",
+    "finance",
+    "stock",
+    "canvas",
+    "drawing",
+    "trading",
+    "technical-analysis"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/deadkennedyx/superdupergraphs.git"
+  }
+}
