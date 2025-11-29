@@ -108,11 +108,6 @@ python -m http.server 4173
 
 Then open `http://localhost:4173/demo/` to try the drawing tools.
 
-## Roadmap ideas
-- Pan/zoom, multi-pane indicators, and snapshots/export
-- Snapping to candles and price levels
-- Hit-testing for moving/editing drawings
-
 ## License
 
 MIT
