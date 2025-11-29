@@ -15,6 +15,7 @@ Lightweight, dependency-free JavaScript library for interactive stock charts wit
 - Cursor crosshair with live price/time readout and right-side price scale
 - Export the chart (base + drawings) as a PNG data URL or downloadable file
 - Selection handles for resizing drawings in grab mode
+- Scroll-to-zoom and drag-to-pan the price series
 - Themeable colors and fonts with sane defaults
 - Zero runtime dependencies; works with plain `<script type="module">`
 
@@ -93,7 +94,8 @@ Options:
   padding?: { top: number, right: number, bottom: number, left: number },
   priceFormatter?: (value: number) => string,
   timeFormatter?: (value: any) => string,
-  theme?: PartialTheme
+  theme?: PartialTheme,
+  minVisibleBars?: number // minimum bars kept visible while zooming
 }
 ```
 

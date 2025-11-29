@@ -1,5 +1,9 @@
 # SuperDuperGraphs
 
+
+https://github.com/user-attachments/assets/c20818c7-64f5-4abc-af65-c6d905f4e752
+
+
 Lightweight, dependency-free JavaScript library for interactive stock charts with TradingView-style drawings (text, emoji, pencil, arrows, shapes, projections, and more). Built on the HTML canvas so you can embed it anywhere without heavy bundles.
 
 ## Features
@@ -11,6 +15,7 @@ Lightweight, dependency-free JavaScript library for interactive stock charts wit
 - Cursor crosshair with live price/time readout and right-side price scale
 - Export the chart (base + drawings) as a PNG data URL or downloadable file
 - Selection handles for resizing drawings in grab mode
+- Scroll-to-zoom and drag-to-pan the price series
 - Themeable colors and fonts with sane defaults
 - Zero runtime dependencies; works with plain `<script type="module">`
 
@@ -89,7 +94,8 @@ Options:
   padding?: { top: number, right: number, bottom: number, left: number },
   priceFormatter?: (value: number) => string,
   timeFormatter?: (value: any) => string,
-  theme?: PartialTheme
+  theme?: PartialTheme,
+  minVisibleBars?: number // minimum bars kept visible while zooming
 }
 ```
 
@@ -103,11 +109,6 @@ python -m http.server 4173
 ```
 
 Then open `http://localhost:4173/demo/` to try the drawing tools.
-
-## Roadmap ideas
-- Pan/zoom, multi-pane indicators, and snapshots/export
-- Snapping to candles and price levels
-- Hit-testing for moving/editing drawings
 
 ## License
 

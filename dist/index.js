@@ -14,7 +14,8 @@ const DEFAULT_OPTIONS = {
   maxCandleWidth: 18,
   priceFormatter: formatPrice,
   timeFormatter: formatTime,
-  showVolume: true
+  showVolume: true,
+  minVisibleBars: 20
 };
 
 function clearCanvas(ctx) {
@@ -43,6 +44,8 @@ export class SuperDuperChart {
     this.options = { ...DEFAULT_OPTIONS, ...options };
     this.theme = deepMerge(DEFAULT_THEME, options.theme || {});
     this.data = options.data || [];
+    this.viewStart = 0;
+    this.viewEnd = Math.max(0, (this.data.length || 1) - 1);
     this.pointerState = null;
     this.cursor = null;
     this.selection = null;
@@ -79,11 +82,13 @@ export class SuperDuperChart {
     this._onPointerMove = (evt) => this._handlePointerMove(evt);
     this._onPointerUp = (evt) => this._handlePointerUp(evt);
     this._onPointerLeave = (evt) => this._handlePointerLeave(evt);
+    this._onWheel = (evt) => this._handleWheel(evt);
     window.addEventListener('resize', this._onResize);
     this.overlayCanvas.addEventListener('pointerdown', this._onPointerDown);
     this.overlayCanvas.addEventListener('pointermove', this._onPointerMove);
     this.overlayCanvas.addEventListener('pointerup', this._onPointerUp);
     this.overlayCanvas.addEventListener('pointerleave', this._onPointerLeave);
+    this.overlayCanvas.addEventListener('wheel', this._onWheel, { passive: false });
   }
 
   destroy() {
@@ -92,10 +97,13 @@ export class SuperDuperChart {
     this.overlayCanvas.removeEventListener('pointermove', this._onPointerMove);
     this.overlayCanvas.removeEventListener('pointerup', this._onPointerUp);
     this.overlayCanvas.removeEventListener('pointerleave', this._onPointerLeave);
+    this.overlayCanvas.removeEventListener('wheel', this._onWheel);
   }
 
   setData(data) {
     this.data = Array.isArray(data) ? data : [];
+    this.viewStart = 0;
+    this.viewEnd = Math.max(0, this.data.length - 1);
     this._updatePriceRange();
     this.render();
   }
@@ -223,17 +231,18 @@ export class SuperDuperChart {
   }
 
   _drawCandles() {
-    if (!this.data.length) return;
+    const visible = this._getVisibleData();
+    if (!visible.count) return;
     const { padding, minCandleWidth, maxCandleWidth } = this.options;
     const { width, height } = this._size;
     const usableWidth = width - padding.left - padding.right;
     const usableHeight = height - padding.top - padding.bottom;
-    const spacing = Math.max(6, usableWidth / Math.max(this.data.length, 1));
+    const spacing = Math.max(6, usableWidth / Math.max(visible.count, 1));
     const bodyWidth = clamp(spacing * 0.6, minCandleWidth, maxCandleWidth);
     this.ctx.lineWidth = 1;
 
-    this.data.forEach((point, index) => {
-      const x = padding.left + spacing * index + spacing / 2;
+    visible.items.forEach((point, i) => {
+      const x = padding.left + spacing * i + spacing / 2;
       const openY = this._yForPrice(point.open, usableHeight, padding);
       const closeY = this._yForPrice(point.close, usableHeight, padding);
       const highY = this._yForPrice(point.high, usableHeight, padding);
@@ -262,14 +271,14 @@ export class SuperDuperChart {
   }
 
   _drawVolume(spacing, bodyWidth) {
+    const visible = this._getVisibleData();
     const { padding } = this.options;
     const { width, height } = this._size;
-    const usableWidth = width - padding.left - padding.right;
     const volumeHeight = padding.bottom * 0.9;
-    const volumes = this.data.map((d) => d.volume || 0);
+    const volumes = visible.items.map((d) => d.volume || 0);
     const maxVolume = Math.max(...volumes, 1);
-    this.data.forEach((point, index) => {
-      const x = padding.left + spacing * index + spacing / 2;
+    visible.items.forEach((point, i) => {
+      const x = padding.left + spacing * i + spacing / 2;
       const vHeight = (point.volume || 0) / maxVolume;
       const barHeight = vHeight * volumeHeight;
       const y = height - padding.bottom + (volumeHeight - barHeight);
@@ -300,12 +309,13 @@ export class SuperDuperChart {
       const ticks = 4;
       this.ctx.textAlign = 'center';
       this.ctx.textBaseline = 'top';
-      const spacing = Math.max(6, (width - padding.left - padding.right) / Math.max(this.data.length, 1));
+      const visible = this._getVisibleData();
+      const spacing = Math.max(6, (width - padding.left - padding.right) / Math.max(visible.count, 1));
       for (let i = 0; i <= ticks; i += 1) {
-        const index = Math.floor((this.data.length - 1) * (i / ticks));
-        const point = this.data[index];
+        const indexOffset = Math.floor((visible.count - 1) * (i / ticks));
+        const point = visible.items[indexOffset];
         if (!point) continue;
-        const x = padding.left + spacing * index + spacing / 2;
+        const x = padding.left + spacing * indexOffset + spacing / 2;
         const label = timeFormatter(point.time);
         this.ctx.fillText(label, x, height - padding.bottom + 6);
       }
@@ -313,14 +323,15 @@ export class SuperDuperChart {
   }
 
   _updatePriceRange() {
-    if (!this.data.length) {
+    const visible = this._getVisibleData();
+    if (!visible.count) {
       this._minPrice = 0;
       this._maxPrice = 1;
       return;
     }
     let min = Number.POSITIVE_INFINITY;
     let max = Number.NEGATIVE_INFINITY;
-    this.data.forEach((point) => {
+    visible.items.forEach((point) => {
       min = Math.min(min, point.low);
       max = Math.max(max, point.high);
     });
@@ -350,23 +361,27 @@ export class SuperDuperChart {
       this.cursor = null;
       return;
     }
+    const visible = this._getVisibleData();
+    if (!visible.count) {
+      this.cursor = null;
+      return;
+    }
     const usableHeight = height - padding.top - padding.bottom;
     const range = this._maxPrice - this._minPrice || 1;
     const price = this._maxPrice - clamp((pos.y - padding.top) / usableHeight, 0, 1) * range;
     let candleInfo = null;
-    if (this.data.length) {
-      const spacing = Math.max(6, (width - padding.left - padding.right) / Math.max(this.data.length, 1));
-      const rawIndex = Math.round((pos.x - padding.left) / spacing);
-      const index = clamp(rawIndex, 0, this.data.length - 1);
-      const candle = this.data[index];
-      const cx = padding.left + spacing * index + spacing / 2;
-      candleInfo = {
-        index,
-        candle,
-        x: cx,
-        label: candle ? timeFormatter(candle.time) : ''
-      };
-    }
+    const spacing = Math.max(6, (width - padding.left - padding.right) / Math.max(visible.count, 1));
+    const rawIndex = Math.round((pos.x - padding.left) / spacing);
+    const indexWithin = clamp(rawIndex, 0, Math.max(visible.count - 1, 0));
+    const dataIndex = visible.start + indexWithin;
+    const candle = visible.items[indexWithin];
+    const cx = padding.left + spacing * indexWithin + spacing / 2;
+    candleInfo = {
+      index: dataIndex,
+      candle,
+      x: cx,
+      label: candle ? timeFormatter(candle.time) : ''
+    };
     this.cursor = {
       x: pos.x,
       y: pos.y,
@@ -480,9 +495,12 @@ export class SuperDuperChart {
   }
 
   _handlePointerDown(evt) {
-    if (!this.activeTool) return;
     evt.preventDefault();
     const pos = this._getPointerPosition(evt);
+    if (!this.activeTool) {
+      this.pointerState = { tool: 'pan', lastPos: pos };
+      return;
+    }
     const { name, options } = this.activeTool;
     const base = {
       color: options.color || this.theme.tools.stroke,
@@ -582,6 +600,11 @@ export class SuperDuperChart {
       this.renderOverlay();
       return;
     }
+    if (this.pointerState.tool === 'pan') {
+      this._panByPixels(pos.x - this.pointerState.lastPos.x);
+      this.pointerState.lastPos = pos;
+      return;
+    }
     if (this.pointerState.tool === 'grab') {
       const { targetIndex, mode, lastPos } = this.pointerState;
       const drawing = this.drawingManager.drawings[targetIndex];
@@ -633,7 +656,7 @@ export class SuperDuperChart {
 
   _handlePointerUp() {
     if (!this.pointerState) return;
-    if (this.pointerState.tool === 'grab') {
+    if (this.pointerState.tool === 'grab' || this.pointerState.tool === 'pan') {
       this.pointerState = null;
       return;
     }
@@ -647,6 +670,23 @@ export class SuperDuperChart {
     this.pointerState = null;
     this.cursor = null;
     this.renderOverlay();
+  }
+
+  _handleWheel(evt) {
+    evt.preventDefault();
+    if (!this.data.length) return;
+    const pos = this._getPointerPosition(evt);
+    const { padding } = this.options;
+    const { width } = this._size;
+    const usableWidth = width - padding.left - padding.right;
+    if (usableWidth <= 0) return;
+    const visibleCount = this._visibleCount();
+    const anchorRatio = clamp((pos.x - padding.left) / usableWidth, 0, 1);
+    const centerIndex = this.viewStart + anchorRatio * Math.max(visibleCount - 1, 0);
+    const delta = evt.deltaY || 0;
+    const factor = delta > 0 ? 1.1 : 0.9;
+    const targetCount = Math.round(visibleCount * factor);
+    this._zoomAround(centerIndex, targetCount);
   }
 
   _pointerStateToDrawing() {
@@ -689,6 +729,86 @@ export class SuperDuperChart {
       default:
         return null;
     }
+  }
+
+  _visibleCount() {
+    return Math.max(0, (this.viewEnd || 0) - (this.viewStart || 0) + 1);
+  }
+
+  _getVisibleData() {
+    const len = this.data.length;
+    if (!len) return { items: [], start: 0, end: -1, count: 0 };
+    const start = clamp(this.viewStart ?? 0, 0, len - 1);
+    const end = clamp(this.viewEnd ?? len - 1, start, len - 1);
+    return {
+      items: this.data.slice(start, end + 1),
+      start,
+      end,
+      count: end - start + 1
+    };
+  }
+
+  _applyView(start, end) {
+    const len = this.data.length;
+    if (!len) {
+      this.viewStart = 0;
+      this.viewEnd = -1;
+      return;
+    }
+    const minBars = Math.max(1, this.options.minVisibleBars || 1);
+    let s = clamp(Math.round(start), 0, len - 1);
+    let e = clamp(Math.round(end), s + minBars - 1, len - 1);
+    const count = e - s + 1;
+    if (count < minBars) {
+      e = Math.min(len - 1, s + minBars - 1);
+      s = Math.max(0, e - minBars + 1);
+    }
+    this.viewStart = s;
+    this.viewEnd = e;
+    this._updatePriceRange();
+    this.render();
+  }
+
+  _panByPixels(deltaX) {
+    const { padding } = this.options;
+    const { width } = this._size;
+    const visible = this._getVisibleData();
+    const usableWidth = width - padding.left - padding.right;
+    if (usableWidth <= 0 || !visible.count) return;
+    const barsPerPixel = visible.count / usableWidth;
+    const deltaBars = Math.round(deltaX * barsPerPixel);
+    if (!deltaBars) return;
+    const len = this.data.length;
+    const maxStart = Math.max(0, len - visible.count);
+    const newStart = clamp(this.viewStart - deltaBars, 0, maxStart);
+    const newEnd = Math.min(len - 1, newStart + visible.count - 1);
+    this.viewStart = newStart;
+    this.viewEnd = newEnd;
+    this._updatePriceRange();
+    this.render();
+  }
+
+  _zoomAround(centerIndex, targetCount) {
+    const len = this.data.length;
+    if (!len) return;
+    const minBars = Math.max(1, this.options.minVisibleBars || 1);
+    const count = clamp(targetCount, minBars, len);
+    const half = (count - 1) / 2;
+    let start = Math.round(centerIndex - half);
+    let end = start + count - 1;
+    if (start < 0) {
+      end += -start;
+      start = 0;
+    }
+    if (end > len - 1) {
+      const overshoot = end - (len - 1);
+      start = Math.max(0, start - overshoot);
+      end = len - 1;
+    }
+    this.viewStart = start;
+    this.viewEnd = end;
+    this._updatePriceRange();
+    this.render();
   }
 }
 
